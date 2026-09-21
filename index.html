@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tubes AI Search: UCS & A* Top-Down Pixel Game</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Header Bar -->
+  <header>
+    <div class="logo-group">
+      <span class="logo-badge">Tubes AI</span>
+      <div>
+        <h1>Top-Down Pixel Pathfinding Simulator</h1>
+        <div class="subtitle">Uniform Cost Search (UCS) & A* Search • Organic Large World (56×40)</div>
+      </div>
+    </div>
+    <div class="header-badges">
+      <div class="pill-badge"><span class="dot dot-mc"></span> MC (Alex): WASD / Arrows</div>
+      <div class="pill-badge"><span class="dot dot-npc"></span> NPC (Bob): Pathfinding Follower</div>
+      <div class="pill-badge" style="background-color: #1e3a8a; border-color: #3b82f6;">World: 56×40 (2,240 Tiles)</div>
+    </div>
+  </header>
+
+  <!-- Main Application Container -->
+  <main class="app-container">
+
+    <!-- Game Viewport Section -->
+    <section class="game-section">
+      <div class="canvas-wrapper">
+        <canvas id="gameCanvas"></canvas>
+      </div>
+
+      <div class="canvas-footer">
+        <div>
+          Gerakkan MC: <span class="key-hint">W</span> <span class="key-hint">A</span> <span class="key-hint">S</span> <span class="key-hint">D</span> / <span class="key-hint">↑←↓→</span> • Jalankan Pathfinding & Kejar: <span class="key-hint">SPACE</span> / <span class="key-hint">ENTER</span> • Klik Minimap untuk Lompat
+        </div>
+        <div class="canvas-footer-actions">
+          <button id="btnFullscreen" class="mini-btn">⛶ Fullscreen</button>
+          <button id="btnMenuToggle" class="mini-btn menu-toggle" style="display: none;">☰ Menu</button>
+          <span>Right-Click: Hapus Tile ke Rumput</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Sidebar Controls & Metrics -->
+    <aside class="controls-sidebar">
+
+      <!-- Real-Time Metrics HUD -->
+      <div class="panel-card">
+        <h2>Live Search Metrics</h2>
+        <div class="stats-grid">
+          <div class="stat-item highlight">
+            <div class="stat-label">Nodes Expanded</div>
+            <div id="statExpanded" class="stat-value">0</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">Algorithm</div>
+            <div id="statAlgorithm" class="stat-value" style="font-size: 13px;">A* (Manhattan)</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">Path Cost (g)</div>
+            <div id="statCost" class="stat-value">0</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">Path Length</div>
+            <div id="statLength" class="stat-value">0 steps</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">Search Time</div>
+            <div id="statTime" class="stat-value">0.00 ms</div>
+          </div>
+        </div>
+        <div id="statStatus" class="stat-status">Ready</div>
+      </div>
+
+      <!-- Algorithm & Heuristics Config -->
+      <div class="panel-card">=
+        <h2>Search Configuration</h2>
+
+        <div class="control-group">
+          <label for="algoSelect">Algorithm</label>
+          <select id="algoSelect">
+            <option value="astar" selected>A* Search (Informed Search)</option>
+            <option value="ucs">Uniform Cost Search (UCS / h = 0)</option>
+            <option value="greedy">Greedy Best-First Search (h only)</option>
+          </select>
+        </div>
+
+        <div class="control-group" id="heuristicGroup">
+          <label for="heuristicSelect">Heuristic Function h(n)</label>
+          <select id="heuristicSelect">
+            <option value="manhattan" selected>Manhattan Distance (|dx| + |dy|)</option>
+            <option value="euclidean">Euclidean Distance (√(dx² + dy²))</option>
+            <option value="chebyshev">Chebyshev Distance (max(|dx|, |dy|))</option>
+          </select>
+        </div>
+
+        <div class="control-group">
+          <label>Heuristic Weight (w in f = g + w·h)</label>
+          <div class="slider-container">
+            <input type="range" id="weightSlider" min="0.0" max="3.0" step="0.1" value="1.0">
+            <span id="weightVal" class="slider-val">1.0</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Environment & Random World Generation -->
+      <div class="panel-card">
+        <h2>Environment & Map</h2>
+
+        <div class="control-group">
+          <label for="presetSelect">Scenario Preset</label>
+          <select id="presetSelect">
+            <option value="river_village" selected>Great Lake & River Valley (Organic 56×40)</option>
+            <option value="concave_trap">Organic Peninsula & Bay Trap (56×40)</option>
+            <option value="forest_sanctuary">Forest Sanctuary & Ruins (56×40)</option>
+            <option value="random_world">🎲 Random World Generator</option>
+          </select>
+        </div>
+
+        <button id="btnRandomMap" class="btn btn-accent" style="margin-bottom: 12px;">
+          🎲 Generate Random Organic World
+        </button>
+
+        <div class="control-group">
+          <label for="brushSelect">Mouse Tool / Brush</label>
+          <select id="brushSelect">
+            <option value="play" selected>Click to Teleport MC</option>
+            <option value="move_npc">Click to Teleport NPC</option>
+            <option value="paint_water">Paint Water / Lake (Obstacle)</option>
+            <option value="paint_bridge">Paint Bridge (Walkable)</option>
+            <option value="paint_tree">Paint Tree (Obstacle)</option>
+            <option value="paint_wall">Paint Brick Wall (Obstacle)</option>
+            <option value="paint_mud">Paint Mud (High Cost = 3)</option>
+            <option value="paint_grass">Paint Grass (Cost = 1)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- NPC Execution & Behavior Mode -->
+      <div class="panel-card" style="border-color: #3b82f6; background: linear-gradient(180deg, #131b2e 0%, #0c1424 100%);">
+        <h2 style="color: #60a5fa;">🤖 Mode & Kontrol NPC</h2>
+
+        <div class="control-group">
+          <label for="npcModeSelect">Mode Pergerakan NPC</label>
+          <select id="npcModeSelect">
+            <option value="standby" selected>⏸️ NPC Diam (Jalankan Manual / RUN)</option>
+            <option value="auto_stop">🚶 Diam saat Jalan, Kejar saat MC Berhenti</option>
+            <option value="continuous">⚡ Pengejaran Kontinu (Real-time)</option>
+          </select>
+        </div>
+
+        <button id="btnRunNpc" class="btn btn-primary" style="font-size: 13px; font-weight: 700; padding: 10px 12px; margin-bottom: 8px; background: linear-gradient(135deg, #16a34a, #15803d); border-color: #22c55e;">
+          ▶️ RUN PATHFINDING & CHASE! (Space)
+        </button>
+
+        <button id="btnStopNpc" class="btn" style="margin-bottom: 12px; background: #1e293b;">
+          🛑 Hentikan NPC (Diam)
+        </button>
+
+        <div class="control-group">
+          <label for="npcSpeedSelect">Kecepatan Lari NPC</label>
+          <select id="npcSpeedSelect">
+            <option value="3.2" selected>Normal (3.2 tiles/s)</option>
+            <option value="5.5">Cepat (5.5 tiles/s)</option>
+            <option value="10.0">Turbo (10.0 tiles/s)</option>
+            <option value="0.0">Beku / Pause (0.0 tiles/s)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Debug Overlay Toggles -->
+      <div class="panel-card">
+        <h2>Debug Overlays</h2>
+        <div class="checkbox-grid">
+          <label class="checkbox-label">
+            <input type="checkbox" id="toggleExplored">
+            Explored Set (Wave)
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="toggleFrontier">
+            Frontier Nodes
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="togglePath">
+            Path Trail
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="toggleMinimap" checked>
+            Minimap Radar
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="toggleGrid">
+            Grid Lines
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="toggleTileStats">
+            Tile Values (f,g,h)
+          </label>
+        </div>
+      </div>
+
+      <!-- Actions & Benchmarks -->
+      <div class="panel-card">
+        <h2>Experimentation & Tools</h2>
+        <button id="btnCompare" class="btn btn-primary" style="margin-bottom: 8px;">
+          📊 Compare All Algorithms (UCS vs A* vs Greedy)
+        </button>
+
+        <div class="btn-group">
+          <button id="btnStepMode" class="btn btn-accent">Step-by-Step Search</button>
+          <button id="btnStepNext" class="btn btn-accent" style="display: none;">Next Step ➔</button>
+          <button id="btnStepStop" class="btn" style="display: none;">Exit Step Mode</button>
+        </div>
+
+        <div class="btn-group">
+          <button id="btnResetEntities" class="btn">Reset Positions</button>
+          <button id="btnClearObstacles" class="btn">Clear Obstacles</button>
+        </div>
+      </div>
+
+    </aside>
+  </main>
+
+  <!-- Comparison Modal -->
+  <div id="compareModal" class="modal-backdrop">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Algorithm Benchmark: UCS vs A* vs Greedy (Large 56×40 World)</h3>
+        <button id="btnCloseModal" class="btn-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <table class="benchmark-table">
+          <thead>
+            <tr>
+              <th>Algorithm & Heuristic</th>
+              <th>Nodes Expanded</th>
+              <th>Path Cost</th>
+              <th>Length</th>
+              <th>Time</th>
+              <th>Efficiency vs UCS</th>
+            </tr>
+          </thead>
+          <tbody id="modalTableBody">
+            <!-- Populated via JavaScript -->
+          </tbody>
+        </table>
+
+        <div class="theory-box">
+          <h4>Key AI Search Insights (From Lecture Slides)</h4>
+          <p>
+            • <strong>UCS (Uniform Cost Search)</strong> expands in concentric circles (order of g) without knowing where the goal is. In this larger 56×40 map, UCS often expands 1,000+ nodes, flooding the terrain.<br>
+            • <strong>A* Search with Manhattan</strong> achieves optimality and significantly prunes the search space because Manhattan distance is an admissible and consistent heuristic for 4-directional movement.<br>
+            • <strong>Heuristic Dominance</strong>: Because Manhattan distance <code>h_m(n) &ge; h_e(n)</code> (Euclidean), Manhattan dominates Euclidean and expands significantly fewer nodes!<br>
+            • <strong>Greedy Best-First</strong> only considers <code>h(n)</code>, which makes it fast in open fields but causes it to take suboptimal detours or become trapped when facing concave obstacles (like the U-trap).
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Entry Script -->
+  <script type="module" src="src/game.js"></script>
+</body>
+</html>
