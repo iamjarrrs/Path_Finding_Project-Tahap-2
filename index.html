@@ -14,13 +14,13 @@
       <span class="logo-badge">Tubes AI</span>
       <div>
         <h1>Top-Down Pixel Pathfinding Simulator</h1>
-        <div class="subtitle">Uniform Cost Search (UCS) & A* Search • Organic Large World (56×40)</div>
+        <div class="subtitle">Uniform Cost Search (UCS) & A* Search • PNG and Procedural Maps</div>
       </div>
     </div>
     <div class="header-badges">
-      <div class="pill-badge"><span class="dot dot-mc"></span> MC (Alex): WASD / Arrows</div>
-      <div class="pill-badge"><span class="dot dot-npc"></span> NPC (Bob): Pathfinding Follower</div>
-      <div class="pill-badge" style="background-color: #1e3a8a; border-color: #3b82f6;">World: 56×40 (2,240 Tiles)</div>
+      <div class="pill-badge"><span class="dot dot-mc"></span> MC (Knight): WASD / Arrows</div>
+      <div class="pill-badge"><span class="dot dot-npc"></span> NPCs (3 Characters): Island Guards</div>
+      <div id="worldSizeBadge" class="pill-badge" style="background-color: #1e3a8a; border-color: #3b82f6;">World: 40×30 (1,200 Tiles)</div>
     </div>
   </header>
 
@@ -114,7 +114,8 @@
         <div class="control-group">
           <label for="presetSelect">Scenario Preset</label>
           <select id="presetSelect">
-            <option value="river_village" selected>Great Lake & River Valley (Organic 56×40)</option>
+            <option value="image_map" selected>Map PNG (40×30)</option>
+            <option value="river_village">Great Lake & River Valley (Organic 56×40)</option>
             <option value="concave_trap">Organic Peninsula & Bay Trap (56×40)</option>
             <option value="forest_sanctuary">Forest Sanctuary & Ruins (56×40)</option>
             <option value="random_world">🎲 Random World Generator</option>
@@ -124,6 +125,7 @@
         <button id="btnRandomMap" class="btn btn-accent" style="margin-bottom: 12px;">
           🎲 Generate Random Organic World
         </button>
+        <p class="control-hint">Di Map PNG, hanya NPC di daratan MC yang mengejar. NPC di daratan lain tetap diam.</p>
 
         <div class="control-group">
           <label for="brushSelect">Mouse Tool / Brush</label>

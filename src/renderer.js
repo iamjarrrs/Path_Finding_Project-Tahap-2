@@ -8,8 +8,6 @@ import {
   VIEWPORT_HEIGHT,
   MINIMAP_WIDTH,
   MINIMAP_HEIGHT,
-  GRID_COLS,
-  GRID_ROWS,
 } from './constants.js';
 
 export class Renderer {
@@ -30,16 +28,28 @@ export class Renderer {
     this.brushPreview = null; // { x, y } in world grid coordinates
   }
 
-  render(map, player, npc, pathResult, camera) {
+  render(map, player, npc, additionalNpcs, pathResult, camera) {
     const ctx = this.ctx;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
+    ctx.setTransform(
+      camera.zoom,
+      0,
+      0,
+      camera.zoom,
+      -camera.x * camera.zoom,
+      -camera.y * camera.zoom
+    );
 
     // Get visible grid tile range for efficient viewport culling
     const bounds = camera.getVisibleGridBounds();
 
-    // 1. Render Visible Tilemap
+    // 1. Render the map art, then draw any tiles changed by the editor.
+    const hasImageBackground = map.isImageMap &&
+      this.tileset.drawMapBackground(ctx, map, camera);
     for (let y = bounds.startRow; y <= bounds.endRow; y++) {
       for (let x = bounds.startCol; x <= bounds.endCol; x++) {
+        if (hasImageBackground && map.grid[y][x] === map.baseGrid[y][x]) continue;
         const tileType = map.getTile(x, y);
         const screen = camera.worldToScreen(x * TILE_SIZE, y * TILE_SIZE);
         this.tileset.drawTile(ctx, tileType, screen.sx, screen.sy);
@@ -62,12 +72,21 @@ export class Renderer {
     }
 
     // 4. Render Start & Goal Rings
-    this._renderEntityRings(ctx, npc, player, camera);
+    const playerRegion = map.isImageMap
+      ? map.getRegionAt(player.gridX, player.gridY)?.id
+      : null;
+    if (npc && (!map.isImageMap || npc.territory === playerRegion)) {
+      this._renderEntityRings(ctx, npc, player, camera);
+    }
 
     // 5. Render Entities (Depth-sorted by Y position)
     const entities = [
-      { entity: player, type: 'alex', label: 'MC (Alex)' },
-      { entity: npc, type: 'bob', label: 'NPC (Bob)' },
+      { entity: player, label: 'MC (Knight)' },
+      { entity: npc, label: this._getCharacterLabel(npc.characterKey) },
+      ...additionalNpcs.map(entity => ({
+        entity,
+        label: this._getCharacterLabel(entity.characterKey),
+      })),
     ];
     entities.sort((a, b) => a.entity.pixelY - b.entity.pixelY);
 
@@ -104,9 +123,11 @@ export class Renderer {
       this._renderBrushPreview(ctx, screen.sx, screen.sy);
     }
 
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+
     // 8. Corner Minimap HUD
     if (this.showMinimap) {
-      this._renderMinimap(ctx, map, player, npc, pathResult, camera);
+      this._renderMinimap(ctx, map, player, npc, additionalNpcs, pathResult, camera);
     }
   }
 
@@ -228,20 +249,24 @@ export class Renderer {
 
   _renderGridLines(ctx, camera, bounds) {
     ctx.strokeStyle = DEBUG_COLORS.GRID_LINES;
-    ctx.lineWidth = 1;
+    ctx.lineWidth = 1 / camera.zoom;
+    const left = camera.x;
+    const top = camera.y;
+    const right = left + VIEWPORT_WIDTH / camera.zoom;
+    const bottom = top + VIEWPORT_HEIGHT / camera.zoom;
 
     for (let x = bounds.startCol; x <= bounds.endCol; x++) {
-      const s = camera.worldToScreen(x * TILE_SIZE, 0);
+      const s = camera.worldToScreen(x * TILE_SIZE, top);
       ctx.beginPath();
-      ctx.moveTo(s.sx, 0);
-      ctx.lineTo(s.sx, VIEWPORT_HEIGHT);
+      ctx.moveTo(s.sx, s.sy);
+      ctx.lineTo(s.sx, bottom);
       ctx.stroke();
     }
     for (let y = bounds.startRow; y <= bounds.endRow; y++) {
-      const s = camera.worldToScreen(0, y * TILE_SIZE);
+      const s = camera.worldToScreen(left, y * TILE_SIZE);
       ctx.beginPath();
-      ctx.moveTo(0, s.sy);
-      ctx.lineTo(VIEWPORT_WIDTH, s.sy);
+      ctx.moveTo(s.sx, s.sy);
+      ctx.lineTo(right, s.sy);
       ctx.stroke();
     }
   }
@@ -273,7 +298,7 @@ export class Renderer {
   }
 
   // --- Corner Minimap HUD ---
-  _renderMinimap(ctx, map, player, npc, pathResult, camera) {
+  _renderMinimap(ctx, map, player, npc, additionalNpcs, pathResult, camera) {
     const pad = 12;
     const mx = VIEWPORT_WIDTH - MINIMAP_WIDTH - pad;
     const my = pad;
@@ -289,20 +314,15 @@ export class Renderer {
     ctx.fillRect(mx, my, MINIMAP_WIDTH, MINIMAP_HEIGHT);
     ctx.strokeRect(mx, my, MINIMAP_WIDTH, MINIMAP_HEIGHT);
 
+    const hasImagePreview = map.isImageMap &&
+      this.tileset.drawMapThumbnail(ctx, mx, my, MINIMAP_WIDTH, MINIMAP_HEIGHT);
+
     // Terrain color map
     for (let y = 0; y < map.rows; y++) {
       for (let x = 0; x < map.cols; x++) {
+        if (hasImagePreview && map.grid[y][x] === map.baseGrid[y][x]) continue;
         const t = map.getTile(x, y);
-        let col = '#22c55e'; // Grass
-        if (t === 2) col = '#0284c7';      // Water
-        else if (t === 3) col = '#a16207'; // Bridge
-        else if (t === 4) col = '#991b1b'; // Wall
-        else if (t === 5) col = '#c2410c'; // Roof
-        else if (t === 6) col = '#15803d'; // Tree
-        else if (t === 7) col = '#713f12'; // Mud
-        else if (t === 1) col = '#e2d9c8'; // Path
-
-        ctx.fillStyle = col;
+        ctx.fillStyle = this._getMinimapTileColor(t);
         ctx.fillRect(mx + x * scaleX, my + y * scaleY, Math.ceil(scaleX), Math.ceil(scaleY));
       }
     }
@@ -332,19 +352,27 @@ export class Renderer {
     // Camera Viewport Rectangle on minimap
     const camGx = camera.x / TILE_SIZE;
     const camGy = camera.y / TILE_SIZE;
-    const camGw = camera.viewportWidth / TILE_SIZE;
-    const camGh = camera.viewportHeight / TILE_SIZE;
+    const camGw = camera.viewportWidth / camera.zoom / TILE_SIZE;
+    const camGh = camera.viewportHeight / camera.zoom / TILE_SIZE;
 
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
     ctx.lineWidth = 1;
     ctx.strokeRect(mx + camGx * scaleX, my + camGy * scaleY, camGw * scaleX, camGh * scaleY);
 
     // Entity blips
-    // NPC Bob (Blue)
-    ctx.fillStyle = '#38bdf8';
-    ctx.beginPath();
-    ctx.arc(mx + npc.gridX * scaleX + scaleX / 2, my + npc.gridY * scaleY + scaleY / 2, 3, 0, Math.PI * 2);
-    ctx.fill();
+    // NPCs (Blue)
+    for (const npcEntity of [npc, ...additionalNpcs]) {
+      ctx.fillStyle = '#38bdf8';
+      ctx.beginPath();
+      ctx.arc(
+        mx + npcEntity.gridX * scaleX + scaleX / 2,
+        my + npcEntity.gridY * scaleY + scaleY / 2,
+        3,
+        0,
+        Math.PI * 2
+      );
+      ctx.fill();
+    }
 
     // Player MC Alex (Red)
     ctx.fillStyle = '#ef4444';
@@ -355,8 +383,29 @@ export class Renderer {
     // Mini-label
     ctx.fillStyle = '#94a3b8';
     ctx.font = '8px monospace';
-    ctx.fillText('MAP 56x40', mx + 4, my + 10);
+    ctx.fillText(`MAP ${map.cols}x${map.rows}`, mx + 4, my + 10);
 
     ctx.restore();
+  }
+
+  _getMinimapTileColor(tileType) {
+    if (tileType === 2) return '#0284c7';
+    if (tileType === 3) return '#a16207';
+    if (tileType === 4) return '#991b1b';
+    if (tileType === 5) return '#c2410c';
+    if (tileType === 6) return '#15803d';
+    if (tileType === 7) return '#713f12';
+    if (tileType === 1) return '#e2d9c8';
+    return '#22c55e';
+  }
+
+  _getCharacterLabel(characterKey) {
+    const labels = {
+      npc_necromancer: 'NPC (Necromancer)',
+      npc_evil_knight: 'NPC (Evil Knight)',
+      npc_goblin_archer: 'NPC (Goblin Archer)',
+      npc_barbarian: 'NPC (Barbarian)',
+    };
+    return labels[characterKey] || 'NPC';
   }
 }

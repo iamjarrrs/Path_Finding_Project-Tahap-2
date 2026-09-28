@@ -1,4 +1,4 @@
-// Entity System: Player (MC - Alex) and NPC (Bob)
+// Entity System: Player and NPCs
 // Handles movement, sprite animations, and path traversal
 
 import { DIRECTION, TILE_SIZE, DIR_OFFSETS } from './constants.js';
@@ -12,7 +12,7 @@ export class Entity {
     this.targetGridX = gridX;
     this.targetGridY = gridY;
 
-    this.characterKey = characterKey; // 'alex' or 'bob'
+    this.characterKey = characterKey;
     this.direction = DIRECTION.DOWN;
     this.isMoving = false;
 
@@ -115,8 +115,8 @@ export class Player extends Entity {
 }
 
 export class NPC extends Entity {
-  constructor(gridX, gridY) {
-    super(gridX, gridY, 'bob');
+  constructor(gridX, gridY, characterKey = 'bob') {
+    super(gridX, gridY, characterKey);
     this.speed = 3.2; // Slightly slower than player for fun chase gameplay
     this.path = []; // List of {x, y} coordinates to follow
     this.pathIndex = 0;
@@ -143,6 +143,11 @@ export class NPC extends Entity {
   stopMovement() {
     this.path = [];
     this.pathIndex = 0;
+    this.targetGridX = this.gridX;
+    this.targetGridY = this.gridY;
+    this.pixelX = this.gridX * TILE_SIZE;
+    this.pixelY = this.gridY * TILE_SIZE;
+    this.moveProgress = 1.0;
     this.isMoving = false;
     this.status = 'idle';
   }

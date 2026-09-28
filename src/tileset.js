@@ -18,10 +18,12 @@ export class TilesetManager {
     );
 
     const assetsToLoad = {
-      alexRun: 'Characters_free/Alex_run_16x16.png',
-      alexIdle: 'Characters_free/Alex_idle_anim_16x16.png',
-      bobRun: 'Characters_free/Bob_run_16x16.png',
-      bobIdle: 'Characters_free/Bob_idle_anim_16x16.png',
+      mapBackground: 'assets/map/map_40x30.png',
+      mcKnight: 'assets/mc/knight_joy.png',
+      npcNecromancer: 'assets/npc/necromancer/Necromancer_creativekind-Sheet.png',
+      npcEvilKnight: 'assets/npc/evil_knight/knight_spritesheet.png',
+      npcGoblinArcher: 'assets/npc/archer/GoblinArcheranim.png',
+      npcBarbarian: 'assets/npc/barbarian/Barbarian.png',
       interiors: 'Interiors_free/16x16/Interiors_free_16x16.png',
       roomBuilder: 'Interiors_free/16x16/Room_Builder_free_16x16.png',
       ...treeAssets,
@@ -294,6 +296,32 @@ export class TilesetManager {
     }
   }
 
+  drawMapBackground(ctx, map, camera) {
+    const image = this.images.mapBackground;
+    if (!image || !image.complete || image.naturalWidth === 0) return false;
+
+    ctx.drawImage(
+      image,
+      0,
+      0,
+      image.naturalWidth,
+      image.naturalHeight,
+      0,
+      0,
+      map.cols * TILE_SIZE,
+      map.rows * TILE_SIZE
+    );
+    return true;
+  }
+
+  drawMapThumbnail(ctx, x, y, width, height) {
+    const image = this.images.mapBackground;
+    if (!image || !image.complete || image.naturalWidth === 0) return false;
+
+    ctx.drawImage(image, x, y, width, height);
+    return true;
+  }
+
   drawTile(ctx, tileType, x, y) {
     if (tileType === TILE_TYPE.TREE && this.treeImages && this.treeImages.length > 0) {
       const treeImage = this.treeImages[0];
@@ -325,40 +353,83 @@ export class TilesetManager {
   }
 
   /**
-   * Draws a character sprite frame from the 24-frame sheet (16x32 source -> 32x64 target)
+   * Draws a frame from the selected character sprite sheet.
    * @param {CanvasRenderingContext2D} ctx
-   * @param {'alex'|'bob'} characterKey
+   * @param {string} characterKey
    * @param {boolean} isMoving
    * @param {number} direction - DIRECTION.RIGHT | UP | LEFT | DOWN
-   * @param {number} animFrame - 0..5 frame within current cycle
+   * @param {number} animFrame - Current animation frame
    * @param {number} worldX - World X in pixels (feet anchor at bottom)
    * @param {number} worldY - World Y in pixels
    */
   drawCharacter(ctx, characterKey, isMoving, direction, animFrame, worldX, worldY) {
-    const imgKey = characterKey === 'alex'
-      ? (isMoving ? 'alexRun' : 'alexIdle')
-      : (isMoving ? 'bobRun' : 'bobIdle');
+    if (characterKey === 'alex') {
+      const knight = this.images.mcKnight;
+      if (knight && knight.complete && knight.naturalWidth > 0) {
+        const frameSize = knight.naturalHeight;
+        const framesPerDirection = Math.floor(knight.naturalWidth / frameSize) / 2;
+        const directionOffset = direction === DIRECTION.LEFT ? framesPerDirection : 0;
+        const animationOffset = isMoving ? Math.floor(animFrame) % framesPerDirection : 0;
+        const frame = directionOffset + animationOffset;
+        const destW = 96;
+        const destH = 96;
+        const destX = worldX + (TILE_SIZE - destW) / 2;
+        const destY = worldY + TILE_SIZE - destH;
+        ctx.drawImage(
+          knight,
+          frame * frameSize,
+          0,
+          frameSize,
+          frameSize,
+          destX,
+          destY,
+          destW,
+          destH
+        );
+        return;
+      }
 
-    const spriteSheet = this.images[imgKey];
+      this._drawFallbackCharacter(
+        ctx,
+        characterKey,
+        direction,
+        worldX - 32,
+        worldY - 32,
+        64,
+        64
+      );
+      return;
+    }
 
-    // Frame layout: 6 frames per direction (Right=0, Up=1, Left=2, Down=3)
-    const baseOffset = (direction % 4) * 6;
-    const currentFrame = (baseOffset + (Math.floor(animFrame) % 6));
+    const spriteConfigs = {
+      npc_necromancer: { key: 'npcNecromancer', frameWidth: 160, frameHeight: 128, frames: 8 },
+      npc_evil_knight: { key: 'npcEvilKnight', frameWidth: 192, frameHeight: 182, frames: 7 },
+      npc_goblin_archer: { key: 'npcGoblinArcher', frameWidth: 128, frameHeight: 128, frames: 8 },
+      npc_barbarian: { key: 'npcBarbarian', frameWidth: 160, frameHeight: 160, frames: 10 },
+    };
+    const config = spriteConfigs[characterKey];
+    const spriteSheet = config && this.images[config.key];
+    const destSize = 96;
+    const scale = destSize / Math.max(config?.frameWidth || destSize, config?.frameHeight || destSize);
+    const destW = config ? config.frameWidth * scale : destSize;
+    const destH = config ? config.frameHeight * scale : destSize;
+    const destX = worldX + (TILE_SIZE - destW) / 2;
+    const destY = worldY + TILE_SIZE - destH;
 
-    const srcW = 16;
-    const srcH = 32;
-    const srcX = currentFrame * srcW;
-    const srcY = 0;
-
-    const destW = 32; // Scaled 2x
-    const destH = 64; // Scaled 2x
-    // Anchor feet at bottom of tile: tile is (worldX, worldY, 32, 32).
-    // The feet align with the tile base, so sprite Y starts 32px above (worldY - 32).
-    const destX = worldX;
-    const destY = worldY - 32;
-
-    if (spriteSheet && spriteSheet.complete && spriteSheet.naturalWidth > 0) {
-      ctx.drawImage(spriteSheet, srcX, srcY, srcW, srcH, destX, destY, destW, destH);
+    if (config && spriteSheet && spriteSheet.complete && spriteSheet.naturalWidth > 0) {
+      const columns = Math.floor(spriteSheet.naturalWidth / config.frameWidth);
+      const frame = isMoving ? Math.floor(animFrame) % Math.min(config.frames, columns) : 0;
+      ctx.drawImage(
+        spriteSheet,
+        frame * config.frameWidth,
+        0,
+        config.frameWidth,
+        config.frameHeight,
+        destX,
+        destY,
+        destW,
+        destH
+      );
     } else {
       // Procedural fallback avatar
       this._drawFallbackCharacter(ctx, characterKey, direction, destX, destY, destW, destH);
