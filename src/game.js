@@ -13,7 +13,7 @@ import {
 } from './constants.js';
 import { GameMap } from './map.js';
 import { TilesetManager } from './tileset.js';
-import { Player, NPC } from './entity.js';
+import { Entity, Player, NPC } from './entity.js';
 import { Camera } from './camera.js';
 import { Renderer } from './renderer.js';
 import { findPath } from './pathfinding.js';
@@ -27,11 +27,16 @@ export class Game {
 
     this.tileset = new TilesetManager();
     this.map = new GameMap();
+    this.imageMapData = null;
     this.camera = new Camera(VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
     this.renderer = new Renderer(this.canvas, this.tileset);
 
-    this.player = new Player(49, 20);
-    this.npc = new NPC(5, 20);
+    this.player = new Player(3, 3);
+    this.npc = new NPC(37, 24, 'npc_goblin_archer');
+    this.additionalNpcs = [];
+    this.allNpcs = [this.npc];
+    this.currentChaser = this.npc;
+    this.currentTerritoryId = null;
 
     // Pathfinding Configuration
     this.currentAlgorithm = ALGORITHM.ASTAR;
@@ -66,9 +71,16 @@ export class Game {
   async init() {
     this._updateStatus('Loading pixel assets...');
     await this.tileset.loadAssets();
+    if (!this.tileset.images.mapBackground) {
+      throw new Error('Could not load the map image at assets/map/map_40x30.png.');
+    }
+    const response = await fetch('assets/map/map_40x30.json');
+    if (!response.ok) {
+      throw new Error(`Could not load map collision data: ${response.status} ${response.statusText}`);
+    }
+    this.imageMapData = await response.json();
 
-    // Load default Great Lake & River Valley preset
-    this.loadMapPreset('river_village');
+    this.loadMapPreset('image_map');
     this.camera.follow(this.player, true);
 
     this._updateStatus('Ready! Move MC with WASD / Arrows.');
@@ -79,10 +91,32 @@ export class Game {
   }
 
   loadMapPreset(presetName) {
-    const coords = this.map.loadPreset(presetName);
+    const coords = presetName === 'image_map'
+      ? this.map.loadImageMap(this.imageMapData)
+      : this.map.loadPreset(presetName);
+    this.camera.setWorldSize(this.map.cols, this.map.rows);
+    this.allNpcs = presetName === 'image_map'
+      ? coords.npcs.map(({ x, y, character, territory }) => {
+          const npc = new NPC(x, y, `npc_${character}`);
+          npc.territory = territory;
+          return npc;
+        })
+      : [new NPC(coords.npcStart.x, coords.npcStart.y)];
+    this.npc = this.allNpcs[0];
+    this.additionalNpcs = this.allNpcs.slice(1);
+    this.currentChaser = null;
+    this.currentTerritoryId = null;
+    if (this.ui.worldSizeBadge) {
+      this.ui.worldSizeBadge.textContent =
+        `World: ${this.map.cols}×${this.map.rows} (${this.map.cols * this.map.rows} Tiles)`;
+    }
     if (coords) {
-      this.npc.setPosition(coords.npcStart.x, coords.npcStart.y);
       this.player.setPosition(coords.mcStart.x, coords.mcStart.y);
+    }
+    if (presetName === 'image_map') {
+      this._selectTerritoryChaser();
+    } else {
+      this.currentChaser = this.npc;
     }
     this.camera.follow(this.player, true);
     this.recalculatePath();
@@ -91,8 +125,17 @@ export class Game {
 
   generateRandomMap() {
     const coords = this.map.generateRandomMap();
+    this.additionalNpcs = [];
+    this.npc = new NPC(coords.npcStart.x, coords.npcStart.y);
+    this.allNpcs = [this.npc];
+    this.currentChaser = this.npc;
+    this.currentTerritoryId = null;
+    this.camera.setWorldSize(this.map.cols, this.map.rows);
+    if (this.ui.worldSizeBadge) {
+      this.ui.worldSizeBadge.textContent =
+        `World: ${this.map.cols}×${this.map.rows} (${this.map.cols * this.map.rows} Tiles)`;
+    }
     if (coords) {
-      this.npc.setPosition(coords.npcStart.x, coords.npcStart.y);
       this.player.setPosition(coords.mcStart.x, coords.mcStart.y);
     }
     this.camera.follow(this.player, true);
@@ -101,7 +144,30 @@ export class Game {
     this._updateStatus('Generated new random organic world!');
   }
 
+  _selectTerritoryChaser(region = this.map.getRegionAt(this.player.gridX, this.player.gridY)) {
+    const territoryId = region?.id || null;
+    if (territoryId === this.currentTerritoryId && this.currentChaser) return false;
+
+    if (this.currentChaser) {
+      this.currentChaser.stopMovement();
+    }
+
+    this.currentTerritoryId = territoryId;
+    this.currentChaser = this.allNpcs.find(npc => npc.territory === territoryId) || null;
+    this.npc = this.currentChaser || this.allNpcs[0];
+    this.additionalNpcs = this.allNpcs.filter(npc => npc !== this.npc);
+    return true;
+  }
+
   recalculatePath(triggerFollow = false) {
+    if (this.map.isImageMap && !this.currentChaser) {
+      this.currentPathResult = null;
+      this.renderer.showExplored = false;
+      this.renderer.showFrontier = false;
+      this.renderer.showPath = false;
+      this._updateStatus('Tidak ada NPC di daratan ini.');
+      return;
+    }
     const start = { x: this.npc.gridX, y: this.npc.gridY };
     const goal = { x: this.player.gridX, y: this.player.gridY };
 
@@ -134,6 +200,10 @@ export class Game {
   }
 
   runNpcPathfinding() {
+    if (this.map.isImageMap && !this.currentChaser) {
+      this._updateStatus('Tidak ada NPC di daratan ini.');
+      return;
+    }
     if (this.isStepMode) {
       this.stopStepSearch();
     }    this.renderer.showExplored = true;
@@ -180,7 +250,15 @@ export class Game {
     const shouldAutoChase = this.npcMode === 'continuous' && distanceToNpc <= this.npcFollowRadius;
 
     if (this.player.gridX !== prevMcX || this.player.gridY !== prevMcY) {
-      if (shouldAutoChase || this.npcMode === 'continuous') {
+      if (this.map.isImageMap) {
+        const region = this.map.getRegionAt(this.player.gridX, this.player.gridY);
+        this._selectTerritoryChaser(region);
+        if (this.currentChaser) {
+          this.recalculatePath(true);
+        } else {
+          this.recalculatePath();
+        }
+      } else if (shouldAutoChase || this.npcMode === 'continuous') {
         this.recalculatePath(true);
       } else {
         // In standby or auto_stop, update visual path preview without moving NPC
@@ -201,17 +279,20 @@ export class Game {
 
     // Update NPC along path
     if (!this.isStepMode) {
-      const prevNpcX = this.npc.gridX;
-      const prevNpcY = this.npc.gridY;
-      this.npc.update(this.map, deltaTime);
+      for (const npc of this.allNpcs) {
+        const prevNpcX = npc.gridX;
+        const prevNpcY = npc.gridY;
+        npc.update(this.map, deltaTime);
 
-      if (this.npc.gridX !== prevNpcX || this.npc.gridY !== prevNpcY) {
-        if (this.npc.status === 'moving' && this.currentPathResult && this.currentPathResult.path) {
-          const currIdx = this.currentPathResult.path.findIndex(
-            p => p.x === this.npc.gridX && p.y === this.npc.gridY
-          );
-          if (currIdx >= 0) {
-            this.currentPathResult.path = this.currentPathResult.path.slice(currIdx);
+        if (npc === this.currentChaser &&
+            (npc.gridX !== prevNpcX || npc.gridY !== prevNpcY)) {
+          if (npc.status === 'moving' && this.currentPathResult?.path) {
+            const currIdx = this.currentPathResult.path.findIndex(
+              p => p.x === npc.gridX && p.y === npc.gridY
+            );
+            if (currIdx >= 0) {
+              this.currentPathResult.path = this.currentPathResult.path.slice(currIdx);
+            }
           }
         }
       }
@@ -224,7 +305,14 @@ export class Game {
   }
 
   render() {
-    this.renderer.render(this.map, this.player, this.npc, this.currentPathResult, this.camera);
+    this.renderer.render(
+      this.map,
+      this.player,
+      this.npc,
+      this.additionalNpcs,
+      this.currentPathResult,
+      this.camera
+    );
   }
 
   // Step-by-Step Search Controls
@@ -308,6 +396,7 @@ export class Game {
       weightSlider: document.getElementById('weightSlider'),
       weightVal: document.getElementById('weightVal'),
       presetSelect: document.getElementById('presetSelect'),
+      worldSizeBadge: document.getElementById('worldSizeBadge'),
       npcSpeedSelect: document.getElementById('npcSpeedSelect'),
       brushSelect: document.getElementById('brushSelect'),
 
@@ -608,8 +697,9 @@ export class Game {
 
       if (this.map.isWalkable(targetGx, targetGy)) {
         this.player.setPosition(targetGx, targetGy);
+        if (this.map.isImageMap) this._selectTerritoryChaser();
         this.camera.follow(this.player, true);
-        this.recalculatePath();
+        this.recalculatePath(!!this.currentChaser);
       }
       return;
     }
@@ -624,7 +714,9 @@ export class Game {
     if (this.brushMode === 'move_mc' || this.brushMode === 'play') {
       if (this.map.isWalkable(gx, gy)) {
         this.player.setPosition(gx, gy);
-        this.recalculatePath();
+        if (this.map.isImageMap) this._selectTerritoryChaser();
+        this.camera.follow(this.player, true);
+        this.recalculatePath(!!this.currentChaser);
       }
     } else if (this.brushMode === 'move_npc') {
       if (this.map.isWalkable(gx, gy)) {

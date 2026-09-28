@@ -13,11 +13,19 @@ export class GameMap {
   constructor(cols = GRID_COLS, rows = GRID_ROWS) {
     this.cols = cols;
     this.rows = rows;
+    this.defaultCols = cols;
+    this.defaultRows = rows;
     this.grid = [];
+    this.baseGrid = null;
+    this.isImageMap = false;
+    this.regions = null;
     this.initEmpty();
   }
 
   initEmpty() {
+    this.isImageMap = false;
+    this.baseGrid = null;
+    this.regions = null;
     this.grid = [];
     for (let y = 0; y < this.rows; y++) {
       const row = [];
@@ -62,6 +70,8 @@ export class GameMap {
 
   // Preset scenarios designed for the 56x40 large world
   loadPreset(presetName) {
+    this.cols = this.defaultCols;
+    this.rows = this.defaultRows;
     this.initEmpty();
 
     switch (presetName) {
@@ -98,6 +108,91 @@ export class GameMap {
           mcStart: { x: 48, y: 20 },
         };
     }
+  }
+
+  loadImageMap(data) {
+    if (!data || !Number.isInteger(data.cols) || !Number.isInteger(data.rows) ||
+        data.cols <= 0 || data.rows <= 0 ||
+        !Array.isArray(data.walkable) || data.walkable.length !== data.rows) {
+      throw new Error('Invalid image map collision data: expected dimensions and walkability rows.');
+    }
+
+    const grid = data.walkable.map((row, y) => {
+      if (typeof row !== 'string' || row.length !== data.cols || !/^[01]+$/.test(row)) {
+        throw new Error(`Invalid image map collision row ${y}: expected ${data.cols} binary values.`);
+      }
+      return Array.from(row, value => value === '1' ? TILE_TYPE.PATH : TILE_TYPE.WATER);
+    });
+
+    const readSpawn = (spawn, name) => {
+      if (!spawn || !Number.isInteger(spawn.x) || !Number.isInteger(spawn.y) ||
+          spawn.x < 0 || spawn.x >= data.cols || spawn.y < 0 || spawn.y >= data.rows ||
+          grid[spawn.y][spawn.x] !== TILE_TYPE.PATH) {
+        throw new Error(`Invalid image map ${name} spawn: location must be a walkable tile.`);
+      }
+      return { x: spawn.x, y: spawn.y };
+    };
+
+    const mcStart = readSpawn(data.spawns?.player, 'player');
+    if (!Array.isArray(data.spawns?.npcs) || data.spawns.npcs.length !== 3) {
+      throw new Error('Invalid image map collision data: expected three NPC spawns.');
+    }
+    if (!Array.isArray(data.regions) || data.regions.length !== 5) {
+      throw new Error('Invalid image map collision data: expected five land regions.');
+    }
+    const regions = data.regions.map((region, index) => {
+      if (typeof region.id !== 'string' || !/^[a-z_]+$/.test(region.id) ||
+          !Number.isInteger(region.minX) || !Number.isInteger(region.maxX) ||
+          !Number.isInteger(region.minY) || !Number.isInteger(region.maxY) ||
+          region.minX < 0 || region.minY < 0 ||
+          region.maxX >= data.cols || region.maxY >= data.rows ||
+          region.minX > region.maxX || region.minY > region.maxY) {
+        throw new Error(`Invalid image map region ${index}.`);
+      }
+      return region;
+    });
+    if (new Set(regions.map(region => region.id)).size !== regions.length) {
+      throw new Error('Invalid image map collision data: region identifiers must be unique.');
+    }
+    const npcs = data.spawns.npcs.map((npc, index) => {
+      if (typeof npc.character !== 'string' || !/^[a-z_]+$/.test(npc.character) ||
+          !regions.some(region => region.id === npc.territory)) {
+        throw new Error(`Invalid image map NPC ${index}: expected a character identifier.`);
+      }
+      const spawn = readSpawn(npc, `NPC ${index}`);
+      if (!regions.some(region =>
+        region.id === npc.territory &&
+        spawn.x >= region.minX && spawn.x <= region.maxX &&
+        spawn.y >= region.minY && spawn.y <= region.maxY
+      )) {
+        throw new Error(`Invalid image map NPC ${index}: spawn must be inside its territory.`);
+      }
+      return {
+        character: npc.character,
+        territory: npc.territory,
+        ...spawn,
+      };
+    });
+    if (new Set(npcs.map(npc => npc.territory)).size !== npcs.length) {
+      throw new Error('Invalid image map collision data: each NPC must have its own territory.');
+    }
+
+    this.cols = data.cols;
+    this.rows = data.rows;
+    this.grid = grid;
+    this.baseGrid = grid.map(row => [...row]);
+    this.isImageMap = true;
+    this.regions = regions;
+
+    return { mcStart, npcs };
+  }
+
+  getRegionAt(x, y) {
+    if (!this.isValid(x, y) || !this.regions) return null;
+    return this.regions.find(region =>
+      x >= region.minX && x <= region.maxX &&
+      y >= region.minY && y <= region.maxY
+    ) || null;
   }
 
   // --- Organic Terrain Generators ---
@@ -371,6 +466,8 @@ export class GameMap {
 
   // --- Procedural Random World Generator ---
   generateRandomMap() {
+    this.cols = this.defaultCols;
+    this.rows = this.defaultRows;
     this.initEmpty();
 
     // 1. Generate 2 to 3 organic lakes of random sizes and positions

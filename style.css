@@ -290,6 +290,13 @@ body.fullscreen-mode .menu-toggle {
   margin-bottom: 12px;
 }
 
+.control-hint {
+  margin: -2px 0 12px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 .control-group:last-child {
   margin-bottom: 0;
 }

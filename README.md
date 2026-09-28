@@ -24,6 +24,8 @@ This project is designed for learning and visualization of informed and uninform
   - trees
   - houses
 - Includes random map generation and preset map scenarios
+- Includes the PNG map at `assets/map/map_40x30.png` with a separate, editable
+  walkability grid in `assets/map/map_40x30.json` (`1` = walkable, `0` = blocked)
 - Provides benchmark comparison between search methods
 
 ## Features
@@ -58,10 +60,34 @@ Modern tiles_Free/
 ├── tests/
 │   └── test_pathfinding.js
 ├── Characters_free/
+├── assets/
+│   ├── map/
+│   │   ├── map_40x30.png
+│   │   └── map_40x30.json
+│   ├── mc/
+│   │   └── knight_joy.png
+│   └── npc/
+│       ├── archer/
+│       ├── barbarian/
+│       ├── evil_knight/
+│       └── necromancer/
 ├── Interiors_free/
 ├── trees/
 └── ...
 ```
+
+The MC uses the animated Knight sprite from `assets/mc/knight_joy.png`.
+Three NPC characters from `assets/npc/` are placed on the center, lower-left,
+and lower-right land areas. Only the NPC on the MC's current land area chases;
+the others stay on their own islands. The upper-right island currently has no
+NPC.
+
+The PNG map uses a 40×30 collision grid in `assets/map/map_40x30.json`. Edit
+the `walkable` strings there to change movement: each character represents one
+tile, with `1` for walkable and `0` for blocked. The `regions` and `spawns`
+entries define which island owns each NPC. The camera zooms in on the player
+instead of showing the whole map. The procedural 56×40 presets remain
+available in the scenario selector.
 
 ## Run locally on your computer
 
@@ -155,4 +181,3 @@ git push -u origin main
 ```
 
 If you want, I can also prepare a more polished GitHub-ready version in English with badges, screenshots, and a shorter project summary.
-
