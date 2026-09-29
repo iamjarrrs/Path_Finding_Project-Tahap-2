@@ -10,6 +10,7 @@ import {
   ALGORITHM,
   HEURISTIC,
   TILE_TYPE,
+  BATTLE_CONFIG,
 } from './constants.js';
 import { GameMap } from './map.js';
 import { TilesetManager } from './tileset.js';
@@ -72,6 +73,9 @@ export class Game {
       playerDefending: false,
       npcDefending: false
     };
+    this.mcSpawn = { x: 3, y: 3 };
+    this.battleNpc = null;
+    this.battleTimers = [];
 
     // UI Elements
     this._cacheUIElements();
@@ -107,10 +111,10 @@ export class Game {
     this.camera.setWorldSize(this.map.cols, this.map.rows);
     this.allNpcs = presetName === 'image_map'
       ? coords.npcs.map(({ x, y, character, territory }) => {
-          const npc = new NPC(x, y, `npc_${character}`);
-          npc.territory = territory;
-          return npc;
-        })
+        const npc = new NPC(x, y, `npc_${character}`);
+        npc.territory = territory;
+        return npc;
+      })
       : [new NPC(coords.npcStart.x, coords.npcStart.y)];
     this.npc = this.allNpcs[0];
     this.additionalNpcs = this.allNpcs.slice(1);
@@ -121,6 +125,7 @@ export class Game {
         `World: ${this.map.cols}×${this.map.rows} (${this.map.cols * this.map.rows} Tiles)`;
     }
     if (coords) {
+      this.mcSpawn = { x: coords.mcStart.x, y: coords.mcStart.y };
       this.player.setPosition(coords.mcStart.x, coords.mcStart.y);
     }
     if (presetName === 'image_map') {
@@ -146,6 +151,7 @@ export class Game {
         `World: ${this.map.cols}×${this.map.rows} (${this.map.cols * this.map.rows} Tiles)`;
     }
     if (coords) {
+      this.mcSpawn = { x: coords.mcStart.x, y: coords.mcStart.y };
       this.player.setPosition(coords.mcStart.x, coords.mcStart.y);
     }
     this.camera.follow(this.player, true);
@@ -170,7 +176,8 @@ export class Game {
   }
 
   recalculatePath(triggerFollow = false) {
-    if (this.map.isImageMap && !this.currentChaser) {
+    const activeNpc = this.currentChaser || this.npc;
+    if (!activeNpc || (this.map.isImageMap && !this.currentChaser)) {
       this.currentPathResult = null;
       this.renderer.showExplored = false;
       this.renderer.showFrontier = false;
@@ -178,7 +185,7 @@ export class Game {
       this._updateStatus('Tidak ada NPC di daratan ini.');
       return;
     }
-    const start = { x: this.npc.gridX, y: this.npc.gridY };
+    const start = { x: activeNpc.gridX, y: activeNpc.gridY };
     const goal = { x: this.player.gridX, y: this.player.gridY };
 
     this.currentPathResult = findPath({
@@ -216,7 +223,7 @@ export class Game {
     }
     if (this.isStepMode) {
       this.stopStepSearch();
-    }    this.renderer.showExplored = true;
+    } this.renderer.showExplored = true;
     this.renderer.showFrontier = true;
     this.renderer.showPath = true;
     if (this.ui && this.ui.toggleExplored) this.ui.toggleExplored.checked = true;
@@ -263,7 +270,8 @@ export class Game {
     const prevMcY = this.player.gridY;
     this.player.handleInput(this.keys, this.map, deltaTime);
 
-    const distanceToNpc = Math.hypot(this.player.gridX - this.npc.gridX, this.player.gridY - this.npc.gridY);
+    const targetNpc = this.currentChaser || this.npc;
+    const distanceToNpc = targetNpc ? Math.hypot(this.player.gridX - targetNpc.gridX, this.player.gridY - targetNpc.gridY) : Infinity;
     const shouldAutoChase = this.npcMode === 'continuous' && distanceToNpc <= this.npcFollowRadius;
 
     if (this.player.gridX !== prevMcX || this.player.gridY !== prevMcY) {
@@ -302,7 +310,7 @@ export class Game {
         npc.update(this.map, deltaTime);
 
         if (npc === this.currentChaser &&
-            (npc.gridX !== prevNpcX || npc.gridY !== prevNpcY)) {
+          (npc.gridX !== prevNpcX || npc.gridY !== prevNpcY)) {
           if (npc.status === 'moving' && this.currentPathResult?.path) {
             const currIdx = this.currentPathResult.path.findIndex(
               p => p.x === npc.gridX && p.y === npc.gridY
@@ -312,10 +320,10 @@ export class Game {
             }
           }
         }
-        
+
         // Battle Trigger Check
-        if (npc === this.currentChaser && npc.gridX === this.player.gridX && npc.gridY === this.player.gridY) {
-          this.startBattle();
+        if (this.gameState === 'EXPLORATION' && npc === this.currentChaser && npc.gridX === this.player.gridX && npc.gridY === this.player.gridY) {
+          this.startBattle(npc);
           break; // Stop updating other NPCs for now
         }
       }
@@ -411,46 +419,96 @@ export class Game {
 
   // --- Battle System ---
 
-  startBattle() {
+  startBattle(chasingNpc = null) {
+    if (this.gameState === 'BATTLE') return;
     console.log("Battle triggered!");
     this.gameState = 'BATTLE';
+    this.battleNpc = chasingNpc || this.currentChaser || this.npc;
+    this._clearBattleTimers();
+
     this.battleState = {
       playerHP: 100,
       npcHP: 100,
       playerDefending: false,
       npcDefending: false
     };
-    
+
     // UI Update
     this.ui.battleModal.classList.add('active');
     this.updateBattleUI();
-    this.ui.battleStatusText.textContent = "⚔️ Turn-Based Battle! ⚔️ (Your Turn)";
+    this.ui.battleStatusText.textContent = "⚔️ Turn-Based Battle! ⚔️ (Giliranmu)";
     this.setBattleButtonsEnabled(true);
+    this._updateStatus('⚔️ Mode Pertarungan Aktif!');
+  }
+
+  _clearBattleTimers() {
+    if (this.battleTimers && this.battleTimers.length > 0) {
+      this.battleTimers.forEach(t => clearTimeout(t));
+    }
+    this.battleTimers = [];
+  }
+
+  _addBattleTimer(timer) {
+    if (!this.battleTimers) this.battleTimers = [];
+    this.battleTimers.push(timer);
+    return timer;
   }
 
   endBattle(playerWon) {
-    this.ui.battleStatusText.textContent = playerWon ? "🎉 You Won! 🎉" : "💀 You Lost! 💀";
+    this._clearBattleTimers();
     this.setBattleButtonsEnabled(false);
-    
-    // Close modal after 2 seconds
-    setTimeout(() => {
+    this.ui.battleStatusText.textContent = playerWon
+      ? "🎉 MENANG! NPC berhasil dikalahkan! 🎉"
+      : "💀 KALAH! Main Character Gugur... 💀";
+
+    const endTimer = setTimeout(() => {
       this.ui.battleModal.classList.remove('active');
-      this.gameState = 'EXPLORATION';
-      
-      // Move NPC away slightly so they don't instantly trigger again
-      let newNx = this.npc.gridX - 2;
-      let newNy = this.npc.gridY - 2;
-      if(this.map.isWalkable(newNx, newNy)) {
-         this.npc.setPosition(newNx, newNy);
+
+      if (playerWon) {
+        // NPC mati: hilangkan karakter NPC yang kalah dari map
+        const defeatedNpc = this.battleNpc || this.currentChaser || this.npc;
+        if (defeatedNpc) {
+          defeatedNpc.stopMovement();
+          this.allNpcs = this.allNpcs.filter(n => n !== defeatedNpc);
+          this.additionalNpcs = this.additionalNpcs.filter(n => n !== defeatedNpc);
+          if (this.currentChaser === defeatedNpc) this.currentChaser = null;
+          if (this.npc === defeatedNpc) this.npc = this.allNpcs[0] || null;
+        }
+        // Posisi MC TETAP di tempat yang sama dan bisa lanjut main
+        this._updateStatus('🎉 NPC dikalahkan! Kamu bisa lanjut menjelajah.');
+      } else {
+        // MC mati: MC kembali respawn ke tempat awal
+        if (this.mcSpawn) {
+          this.player.setPosition(this.mcSpawn.x, this.mcSpawn.y);
+        }
+        // Hentikan pergerakan semua NPC
+        for (const n of this.allNpcs) {
+          n.stopMovement();
+        }
+        if (this.currentChaser) {
+          this.currentChaser.stopMovement();
+        }
+        // Kamera kembali fokus ke player di titik awal
+        this.camera.follow(this.player, true);
+        if (this.map.isImageMap) {
+          this._selectTerritoryChaser();
+        }
+        this._updateStatus('💀 MC Respawn ke titik awal. Siap bermain kembali!');
       }
+
+      this.gameState = 'EXPLORATION';
+      this.battleNpc = null;
       this.recalculatePath(false);
-    }, 2500);
+      this.render();
+    }, 1800);
+
+    this._addBattleTimer(endTimer);
   }
 
   updateBattleUI() {
     this.ui.playerHpBar.style.width = `${Math.max(0, this.battleState.playerHP)}%`;
     this.ui.playerHpText.textContent = Math.max(0, this.battleState.playerHP);
-    
+
     this.ui.npcHpBar.style.width = `${Math.max(0, this.battleState.npcHP)}%`;
     this.ui.npcHpText.textContent = Math.max(0, this.battleState.npcHP);
   }
@@ -463,78 +521,94 @@ export class Game {
 
   doPlayerAction(action) {
     if (this.gameState !== 'BATTLE') return;
-    
+
     this.battleState.playerDefending = false;
-    
-    const baseDamage = 20;
-    const healAmount = 25;
-    const maxHP = 100;
-    
+
+    const baseDamage = BATTLE_CONFIG.BASE_DAMAGE;
+    const healAmount = BATTLE_CONFIG.HEAL_AMOUNT;
+    const maxHP = BATTLE_CONFIG.MAX_HP;
+
     if (action === ACTIONS.ATTACK) {
       let damage = baseDamage;
       if (this.battleState.npcDefending) damage = Math.floor(damage * 0.5);
       this.battleState.npcHP -= damage;
-      this.ui.battleStatusText.textContent = `MC attacked for ${damage} damage!`;
+      this.ui.battleStatusText.textContent = `⚔️ MC menyerang! Memberikan ${damage} damage.`;
     } else if (action === ACTIONS.DEFEND) {
       this.battleState.playerDefending = true;
-      this.ui.battleStatusText.textContent = `MC is defending!`;
+      this.ui.battleStatusText.textContent = `🛡️ MC bertahan! Damage berikutnya berkurang 50%.`;
     } else if (action === ACTIONS.POTION) {
       this.battleState.playerHP = Math.min(maxHP, this.battleState.playerHP + healAmount);
-      this.ui.battleStatusText.textContent = `MC drank a potion!`;
+      this.ui.battleStatusText.textContent = `🧪 MC meminum potion! HP bertambah ${healAmount}.`;
     }
-    
+
     this.updateBattleUI();
     this.setBattleButtonsEnabled(false);
-    
+
     if (this.battleState.npcHP <= 0) {
-       this.endBattle(true);
-       return;
+      this.endBattle(true);
+      return;
     }
-    
-    setTimeout(() => this.doNPCAction(), 1000);
+
+    const npcTurnTimer = setTimeout(() => {
+      if (this.gameState === 'BATTLE') {
+        this.doNPCAction();
+      }
+    }, 900);
+    this._addBattleTimer(npcTurnTimer);
   }
 
   doNPCAction() {
-    this.ui.battleStatusText.textContent = "NPC is thinking...";
-    
-    setTimeout(() => {
-      const { bestAction, evaluations, nodeCount } = getBestNPCAction(this.battleState);
-      
-      // Update Debug UI
-      this.ui.debugEvaluations.innerHTML = `Attack: ${evaluations[ACTIONS.ATTACK]}, Defend: ${evaluations[ACTIONS.DEFEND]}, Potion: ${evaluations[ACTIONS.POTION]}`;
-      this.ui.debugNodeCount.textContent = nodeCount;
-      this.ui.debugAction.textContent = bestAction;
-      
+    if (this.gameState !== 'BATTLE') return;
+    this.ui.battleStatusText.textContent = "🤖 NPC sedang berpikir (Minimax)...";
+
+    const thinkTimer = setTimeout(() => {
+      if (this.gameState !== 'BATTLE') return;
+      const { bestAction, evaluations, nodesMinimax, nodesAlphaBeta, pruningReduction } = getBestNPCAction(this.battleState);
+
+      // Update Debug UI — Minimax vs Alpha-Beta Comparison
+      if (this.ui.debugEvaluations) {
+        this.ui.debugEvaluations.innerHTML = `Attack: ${evaluations[ACTIONS.ATTACK]}, Defend: ${evaluations[ACTIONS.DEFEND]}, Potion: ${evaluations[ACTIONS.POTION]}`;
+      }
+      if (this.ui.debugNodeMinimax) this.ui.debugNodeMinimax.textContent = nodesMinimax;
+      if (this.ui.debugNodeAlphaBeta) this.ui.debugNodeAlphaBeta.textContent = nodesAlphaBeta;
+      if (this.ui.debugPruningReduction) this.ui.debugPruningReduction.textContent = `${pruningReduction}%`;
+      if (this.ui.debugAction) this.ui.debugAction.textContent = bestAction;
+
       this.battleState.npcDefending = false;
-      const baseDamage = 20;
-      const healAmount = 25;
-      const maxHP = 100;
-      
+      const baseDamage = BATTLE_CONFIG.BASE_DAMAGE;
+      const healAmount = BATTLE_CONFIG.HEAL_AMOUNT;
+      const maxHP = BATTLE_CONFIG.MAX_HP;
+
       if (bestAction === ACTIONS.ATTACK) {
         let damage = baseDamage;
         if (this.battleState.playerDefending) damage = Math.floor(damage * 0.5);
         this.battleState.playerHP -= damage;
-        this.ui.battleStatusText.textContent = `NPC attacked for ${damage} damage!`;
+        this.ui.battleStatusText.textContent = `⚔️ NPC menyerang! Memberikan ${damage} damage.`;
       } else if (bestAction === ACTIONS.DEFEND) {
         this.battleState.npcDefending = true;
-        this.ui.battleStatusText.textContent = `NPC is defending!`;
+        this.ui.battleStatusText.textContent = `🛡️ NPC bertahan! Damage berikutnya berkurang 50%.`;
       } else if (bestAction === ACTIONS.POTION) {
         this.battleState.npcHP = Math.min(maxHP, this.battleState.npcHP + healAmount);
-        this.ui.battleStatusText.textContent = `NPC drank a potion!`;
+        this.ui.battleStatusText.textContent = `🧪 NPC meminum potion! HP bertambah ${healAmount}.`;
       }
-      
+
       this.updateBattleUI();
-      
+
       if (this.battleState.playerHP <= 0) {
         this.endBattle(false);
         return;
       }
-      
-      setTimeout(() => {
-        this.ui.battleStatusText.textContent = "Your Turn!";
-        this.setBattleButtonsEnabled(true);
-      }, 1000);
-    }, 500); // Simulate thinking time
+
+      const nextTurnTimer = setTimeout(() => {
+        if (this.gameState === 'BATTLE') {
+          this.ui.battleStatusText.textContent = "Giliranmu!";
+          this.setBattleButtonsEnabled(true);
+        }
+      }, 900);
+      this._addBattleTimer(nextTurnTimer);
+    }, 450);
+
+    this._addBattleTimer(thinkTimer);
   }
 
   // --- UI Bindings & Event Handlers ---
@@ -602,7 +676,10 @@ export class Game {
       btnDefend: document.getElementById('btnDefend'),
       btnPotion: document.getElementById('btnPotion'),
       debugEvaluations: document.getElementById('debugEvaluations'),
-      debugNodeCount: document.getElementById('debugNodeCount'),
+      debugNodeCount: document.getElementById('debugNodeCount'),       // legacy (may be null)
+      debugNodeMinimax: document.getElementById('debugNodeMinimax'),
+      debugNodeAlphaBeta: document.getElementById('debugNodeAlphaBeta'),
+      debugPruningReduction: document.getElementById('debugPruningReduction'),
       debugAction: document.getElementById('debugAction'),
     };
   }
@@ -688,8 +765,8 @@ export class Game {
       const mx = VIEWPORT_WIDTH - MINIMAP_WIDTH - pad;
       const my = pad;
       const inMinimap = this.renderer.showMinimap &&
-                        sx >= mx && sx <= mx + MINIMAP_WIDTH &&
-                        sy >= my && sy <= my + MINIMAP_HEIGHT;
+        sx >= mx && sx <= mx + MINIMAP_WIDTH &&
+        sy >= my && sy <= my + MINIMAP_HEIGHT;
 
       if (!inMinimap) {
         const gridPos = this.camera.screenToGrid(sx, sy);
@@ -906,8 +983,8 @@ export class Game {
     const my = pad;
 
     if (this.renderer.showMinimap &&
-        sx >= mx && sx <= mx + MINIMAP_WIDTH &&
-        sy >= my && sy <= my + MINIMAP_HEIGHT) {
+      sx >= mx && sx <= mx + MINIMAP_WIDTH &&
+      sy >= my && sy <= my + MINIMAP_HEIGHT) {
       // Clicked inside minimap: teleport player to clicked map fraction
       const normX = (sx - mx) / MINIMAP_WIDTH;
       const normY = (sy - my) / MINIMAP_HEIGHT;
@@ -955,7 +1032,7 @@ export class Game {
       const tileToPaint = brushTileMap[this.brushMode];
       if (tileToPaint !== undefined) {
         if ((gx === this.player.gridX && gy === this.player.gridY) ||
-            (gx === this.npc.gridX && gy === this.npc.gridY)) {
+          (gx === this.npc.gridX && gy === this.npc.gridY)) {
           return;
         }
         this.map.setTile(gx, gy, tileToPaint);

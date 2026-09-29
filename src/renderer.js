@@ -82,12 +82,17 @@ export class Renderer {
     // 5. Render Entities (Depth-sorted by Y position)
     const entities = [
       { entity: player, label: 'MC (Knight)' },
-      { entity: npc, label: this._getCharacterLabel(npc.characterKey) },
-      ...additionalNpcs.map(entity => ({
-        entity,
-        label: this._getCharacterLabel(entity.characterKey),
-      })),
     ];
+    if (npc) {
+      entities.push({ entity: npc, label: this._getCharacterLabel(npc.characterKey) });
+    }
+    if (additionalNpcs && additionalNpcs.length > 0) {
+      for (const entity of additionalNpcs) {
+        if (entity) {
+          entities.push({ entity, label: this._getCharacterLabel(entity.characterKey) });
+        }
+      }
+    }
     entities.sort((a, b) => a.entity.pixelY - b.entity.pixelY);
 
     for (const item of entities) {
@@ -362,6 +367,7 @@ export class Renderer {
     // Entity blips
     // NPCs (Blue)
     for (const npcEntity of [npc, ...additionalNpcs]) {
+      if (!npcEntity) continue;
       ctx.fillStyle = '#38bdf8';
       ctx.beginPath();
       ctx.arc(
