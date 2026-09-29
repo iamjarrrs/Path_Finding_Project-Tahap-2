@@ -18,6 +18,7 @@ import { Camera } from './camera.js';
 import { Renderer } from './renderer.js';
 import { findPath } from './pathfinding.js';
 import { runComparisonBenchmark } from './comparison.js';
+import { getBestNPCAction, ACTIONS } from './minimax.js';
 
 export class Game {
   constructor() {
@@ -62,6 +63,15 @@ export class Game {
 
     // Timing
     this.lastTime = performance.now();
+
+    // Game State
+    this.gameState = 'EXPLORATION'; // 'EXPLORATION' | 'BATTLE'
+    this.battleState = {
+      playerHP: 100,
+      npcHP: 100,
+      playerDefending: false,
+      npcDefending: false
+    };
 
     // UI Elements
     this._cacheUIElements();
@@ -237,6 +247,13 @@ export class Game {
     const deltaTime = Math.min((currentTime - this.lastTime) / 1000, 0.1);
     this.lastTime = currentTime;
 
+    if (this.gameState === 'BATTLE') {
+      // Pause movement in battle state, but still render
+      this.render();
+      requestAnimationFrame(this._loop.bind(this));
+      return;
+    }
+
     // Update tile animations (water waves)
     this.tileset.update(deltaTime);
 
@@ -294,6 +311,12 @@ export class Game {
               this.currentPathResult.path = this.currentPathResult.path.slice(currIdx);
             }
           }
+        }
+        
+        // Battle Trigger Check
+        if (npc === this.currentChaser && npc.gridX === this.player.gridX && npc.gridY === this.player.gridY) {
+          this.startBattle();
+          break; // Stop updating other NPCs for now
         }
       }
     }
@@ -386,6 +409,134 @@ export class Game {
     this._displayComparisonModal(results);
   }
 
+  // --- Battle System ---
+
+  startBattle() {
+    console.log("Battle triggered!");
+    this.gameState = 'BATTLE';
+    this.battleState = {
+      playerHP: 100,
+      npcHP: 100,
+      playerDefending: false,
+      npcDefending: false
+    };
+    
+    // UI Update
+    this.ui.battleModal.classList.add('active');
+    this.updateBattleUI();
+    this.ui.battleStatusText.textContent = "⚔️ Turn-Based Battle! ⚔️ (Your Turn)";
+    this.setBattleButtonsEnabled(true);
+  }
+
+  endBattle(playerWon) {
+    this.ui.battleStatusText.textContent = playerWon ? "🎉 You Won! 🎉" : "💀 You Lost! 💀";
+    this.setBattleButtonsEnabled(false);
+    
+    // Close modal after 2 seconds
+    setTimeout(() => {
+      this.ui.battleModal.classList.remove('active');
+      this.gameState = 'EXPLORATION';
+      
+      // Move NPC away slightly so they don't instantly trigger again
+      let newNx = this.npc.gridX - 2;
+      let newNy = this.npc.gridY - 2;
+      if(this.map.isWalkable(newNx, newNy)) {
+         this.npc.setPosition(newNx, newNy);
+      }
+      this.recalculatePath(false);
+    }, 2500);
+  }
+
+  updateBattleUI() {
+    this.ui.playerHpBar.style.width = `${Math.max(0, this.battleState.playerHP)}%`;
+    this.ui.playerHpText.textContent = Math.max(0, this.battleState.playerHP);
+    
+    this.ui.npcHpBar.style.width = `${Math.max(0, this.battleState.npcHP)}%`;
+    this.ui.npcHpText.textContent = Math.max(0, this.battleState.npcHP);
+  }
+
+  setBattleButtonsEnabled(enabled) {
+    this.ui.btnAttack.disabled = !enabled;
+    this.ui.btnDefend.disabled = !enabled;
+    this.ui.btnPotion.disabled = !enabled;
+  }
+
+  doPlayerAction(action) {
+    if (this.gameState !== 'BATTLE') return;
+    
+    this.battleState.playerDefending = false;
+    
+    const baseDamage = 20;
+    const healAmount = 25;
+    const maxHP = 100;
+    
+    if (action === ACTIONS.ATTACK) {
+      let damage = baseDamage;
+      if (this.battleState.npcDefending) damage = Math.floor(damage * 0.5);
+      this.battleState.npcHP -= damage;
+      this.ui.battleStatusText.textContent = `MC attacked for ${damage} damage!`;
+    } else if (action === ACTIONS.DEFEND) {
+      this.battleState.playerDefending = true;
+      this.ui.battleStatusText.textContent = `MC is defending!`;
+    } else if (action === ACTIONS.POTION) {
+      this.battleState.playerHP = Math.min(maxHP, this.battleState.playerHP + healAmount);
+      this.ui.battleStatusText.textContent = `MC drank a potion!`;
+    }
+    
+    this.updateBattleUI();
+    this.setBattleButtonsEnabled(false);
+    
+    if (this.battleState.npcHP <= 0) {
+       this.endBattle(true);
+       return;
+    }
+    
+    setTimeout(() => this.doNPCAction(), 1000);
+  }
+
+  doNPCAction() {
+    this.ui.battleStatusText.textContent = "NPC is thinking...";
+    
+    setTimeout(() => {
+      const { bestAction, evaluations, nodeCount } = getBestNPCAction(this.battleState);
+      
+      // Update Debug UI
+      this.ui.debugEvaluations.innerHTML = `Attack: ${evaluations[ACTIONS.ATTACK]}, Defend: ${evaluations[ACTIONS.DEFEND]}, Potion: ${evaluations[ACTIONS.POTION]}`;
+      this.ui.debugNodeCount.textContent = nodeCount;
+      this.ui.debugAction.textContent = bestAction;
+      
+      this.battleState.npcDefending = false;
+      const baseDamage = 20;
+      const healAmount = 25;
+      const maxHP = 100;
+      
+      if (bestAction === ACTIONS.ATTACK) {
+        let damage = baseDamage;
+        if (this.battleState.playerDefending) damage = Math.floor(damage * 0.5);
+        this.battleState.playerHP -= damage;
+        this.ui.battleStatusText.textContent = `NPC attacked for ${damage} damage!`;
+      } else if (bestAction === ACTIONS.DEFEND) {
+        this.battleState.npcDefending = true;
+        this.ui.battleStatusText.textContent = `NPC is defending!`;
+      } else if (bestAction === ACTIONS.POTION) {
+        this.battleState.npcHP = Math.min(maxHP, this.battleState.npcHP + healAmount);
+        this.ui.battleStatusText.textContent = `NPC drank a potion!`;
+      }
+      
+      this.updateBattleUI();
+      
+      if (this.battleState.playerHP <= 0) {
+        this.endBattle(false);
+        return;
+      }
+      
+      setTimeout(() => {
+        this.ui.battleStatusText.textContent = "Your Turn!";
+        this.setBattleButtonsEnabled(true);
+      }, 1000);
+    }, 500); // Simulate thinking time
+  }
+
   // --- UI Bindings & Event Handlers ---
 
   _cacheUIElements() {
@@ -433,6 +584,57 @@ export class Game {
       compareModal: document.getElementById('compareModal'),
       btnCloseModal: document.getElementById('btnCloseModal'),
       modalTableBody: document.getElementById('modalTableBody'),
+
+      // Drawer Menu
+      btnFloatingMenu: document.getElementById('btnFloatingMenu'),
+      btnCloseSidebar: document.getElementById('btnCloseSidebar'),
+      sidebarDrawer: document.getElementById('sidebarDrawer'),
+      menuBackdrop: document.getElementById('menuBackdrop'),
+
+      // Battle UI
+      battleModal: document.getElementById('battleModal'),
+      battleStatusText: document.getElementById('battleStatusText'),
+      playerHpBar: document.getElementById('playerHpBar'),
+      playerHpText: document.getElementById('playerHpText'),
+      npcHpBar: document.getElementById('npcHpBar'),
+      npcHpText: document.getElementById('npcHpText'),
+      btnAttack: document.getElementById('btnAttack'),
+      btnDefend: document.getElementById('btnDefend'),
+      btnPotion: document.getElementById('btnPotion'),
+      debugEvaluations: document.getElementById('debugEvaluations'),
+      debugNodeCount: document.getElementById('debugNodeCount'),
+      debugAction: document.getElementById('debugAction'),
+    };
+  }
+
+  toggleMenu() {
+    const isOpen = document.body.classList.toggle('menu-open');
+    if (this.ui.sidebarDrawer) {
+      this.ui.sidebarDrawer.classList.toggle('open', isOpen);
+    }
+  }
+
+  openMenu() {
+    document.body.classList.add('menu-open');
+    if (this.ui.sidebarDrawer) {
+      this.ui.sidebarDrawer.classList.add('open');
+    }
+  }
+
+  closeMenu() {
+    document.body.classList.remove('menu-open');
+    if (this.ui.sidebarDrawer) {
+      this.ui.sidebarDrawer.classList.remove('open');
+    }
+  }
+
+  _getCanvasCoords(e) {
+    const rect = this.canvas.getBoundingClientRect();
+    const scaleX = this.canvas.width / (rect.width || this.canvas.width);
+    const scaleY = this.canvas.height / (rect.height || this.canvas.height);
+    return {
+      sx: (e.clientX - rect.left) * scaleX,
+      sy: (e.clientY - rect.top) * scaleY,
     };
   }
 
@@ -445,6 +647,13 @@ export class Game {
       if (e.code === 'Space' || e.code === 'Enter') {
         this.runNpcPathfinding();
       }
+      if ((e.key === 'm' || e.key === 'M') && !['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) {
+        this.toggleMenu();
+      }
+      if (e.key === 'Escape') {
+        this.closeMenu();
+        if (this.ui.compareModal) this.ui.compareModal.classList.remove('active');
+      }
       this.keys[e.code] = true;
       this.keys[e.key] = true;
     });
@@ -454,6 +663,17 @@ export class Game {
       this.keys[e.key] = false;
     });
 
+    // Drawer Menu Events
+    if (this.ui.btnFloatingMenu) {
+      this.ui.btnFloatingMenu.addEventListener('click', () => this.toggleMenu());
+    }
+    if (this.ui.btnCloseSidebar) {
+      this.ui.btnCloseSidebar.addEventListener('click', () => this.closeMenu());
+    }
+    if (this.ui.menuBackdrop) {
+      this.ui.menuBackdrop.addEventListener('click', () => this.closeMenu());
+    }
+
     // Mouse Canvas Interaction
     this.canvas.addEventListener('mousedown', (e) => {
       this.isMouseDown = true;
@@ -461,9 +681,7 @@ export class Game {
     });
 
     this.canvas.addEventListener('mousemove', (e) => {
-      const rect = this.canvas.getBoundingClientRect();
-      const sx = e.clientX - rect.left;
-      const sy = e.clientY - rect.top;
+      const { sx, sy } = this._getCanvasCoords(e);
 
       // Check if mouse is hovering over minimap
       const pad = 12;
@@ -499,9 +717,7 @@ export class Game {
 
     this.canvas.addEventListener('contextmenu', (e) => {
       e.preventDefault(); // Right-click erases to grass
-      const rect = this.canvas.getBoundingClientRect();
-      const sx = e.clientX - rect.left;
-      const sy = e.clientY - rect.top;
+      const { sx, sy } = this._getCanvasCoords(e);
       const gridPos = this.camera.screenToGrid(sx, sy);
 
       if (this.map.isValid(gridPos.gx, gridPos.gy)) {
@@ -604,6 +820,11 @@ export class Game {
       }
     });
 
+    // Battle Actions
+    this.ui.btnAttack.addEventListener('click', () => this.doPlayerAction(ACTIONS.ATTACK));
+    this.ui.btnDefend.addEventListener('click', () => this.doPlayerAction(ACTIONS.DEFEND));
+    this.ui.btnPotion.addEventListener('click', () => this.doPlayerAction(ACTIONS.POTION));
+
     const fullscreenBtn = document.getElementById('btnFullscreen');
     const menuToggleBtn = document.getElementById('btnMenuToggle');
 
@@ -677,9 +898,7 @@ export class Game {
   }
 
   _handleCanvasPointer(e) {
-    const rect = this.canvas.getBoundingClientRect();
-    const sx = e.clientX - rect.left;
-    const sy = e.clientY - rect.top;
+    const { sx, sy } = this._getCanvasCoords(e);
 
     // Check if clicking on the corner minimap
     const pad = 12;
