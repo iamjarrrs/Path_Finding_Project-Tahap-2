@@ -2,6 +2,13 @@
 
 export const TILE_SIZE = 32; // Screen display size in pixels (crisp 16x16 scaled 2x)
 
+// Battle System Configuration Constants
+export const BATTLE_CONFIG = {
+  BASE_DAMAGE: 30,
+  HEAL_AMOUNT: 25,
+  MAX_HP: 100,
+};
+
 // Large World Grid Dimensions (56 cols x 40 rows = 2,240 tiles, 4x larger world)
 export const GRID_COLS = 56;
 export const GRID_ROWS = 40;

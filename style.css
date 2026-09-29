@@ -775,3 +775,16 @@ input[type="range"] {
 .debug-overlay h4 {
   color: #93c5fd;
 }
+
+/* Node Count Comparison Highlights */
+.debug-highlight-minimax {
+  color: #f87171;       /* Red: pure minimax — more nodes */
+  font-weight: 700;
+  font-family: var(--font-mono);
+}
+
+.debug-highlight-ab {
+  color: #4ade80;       /* Green: alpha-beta — fewer nodes */
+  font-weight: 700;
+  font-family: var(--font-mono);
+}

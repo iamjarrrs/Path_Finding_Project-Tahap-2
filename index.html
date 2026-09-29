@@ -265,9 +265,11 @@
 
         <!-- Debug Overlay for Minimax -->
         <div class="theory-box debug-overlay">
-          <h4>🤖 AI Debug (Minimax)</h4>
+          <h4>🤖 AI Debug (MINIMAX)</h4>
           <p><strong>Action Evaluations:</strong> <span id="debugEvaluations">Waiting...</span></p>
-          <p><strong>Nodes Expanded this turn:</strong> <span id="debugNodeCount">0</span></p>
+          <p><strong>Nodes (Minimax Standard):</strong> <span id="debugNodeMinimax" class="debug-highlight-minimax">0</span></p>
+          <p><strong>Nodes (Alpha-Beta Pruned):</strong> <span id="debugNodeAlphaBeta" class="debug-highlight-ab">0</span></p>
+          <p><strong>Pruning Saved:</strong> <span id="debugPruningReduction">0%</span> fewer nodes</p>
           <p><strong>AI Chose:</strong> <span id="debugAction">...</span></p>
         </div>
       </div>
