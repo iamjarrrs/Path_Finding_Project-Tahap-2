@@ -8,45 +8,55 @@
 </head>
 <body>
 
-  <!-- Header Bar -->
-  <header>
-    <div class="logo-group">
-      <span class="logo-badge">Tubes AI</span>
-      <div>
-        <h1>Top-Down Pixel Pathfinding Simulator</h1>
-        <div class="subtitle">Uniform Cost Search (UCS) & A* Search • PNG and Procedural Maps</div>
-      </div>
-    </div>
-    <div class="header-badges">
-      <div class="pill-badge"><span class="dot dot-mc"></span> MC (Knight): WASD / Arrows</div>
-      <div class="pill-badge"><span class="dot dot-npc"></span> NPCs (3 Characters): Island Guards</div>
-      <div id="worldSizeBadge" class="pill-badge" style="background-color: #1e3a8a; border-color: #3b82f6;">World: 40×30 (1,200 Tiles)</div>
-    </div>
-  </header>
+  <!-- Floating Top Left Game HUD -->
+  <div class="game-hud-top">
+    <span class="logo-badge">Tubes AI</span>
+    <span class="hud-title">Pathfinding & Battle Simulator</span>
+    <div id="worldSizeBadge" class="pill-badge" style="background-color: #1e3a8a; border-color: #3b82f6;">World: 40×30</div>
+    <div class="pill-badge"><span class="dot dot-mc"></span> MC</div>
+    <div class="pill-badge"><span class="dot dot-npc"></span> NPC</div>
+  </div>
 
-  <!-- Main Application Container -->
+  <!-- Square Menu Button (Top Right Corner) -->
+  <button id="btnFloatingMenu" class="btn-square-menu" aria-label="Buka Menu" title="Buka Menu & Pengaturan AI (M)">
+    ☰
+  </button>
+
+  <!-- Sidebar Overlay Backdrop -->
+  <div id="menuBackdrop" class="menu-backdrop"></div>
+
+  <!-- Main Application Container (Pure Fullscreen) -->
   <main class="app-container">
-
     <!-- Game Viewport Section -->
     <section class="game-section">
       <div class="canvas-wrapper">
         <canvas id="gameCanvas"></canvas>
       </div>
 
+      <!-- Floating Bottom Hints -->
       <div class="canvas-footer">
         <div>
-          Gerakkan MC: <span class="key-hint">W</span> <span class="key-hint">A</span> <span class="key-hint">S</span> <span class="key-hint">D</span> / <span class="key-hint">↑←↓→</span> • Jalankan Pathfinding & Kejar: <span class="key-hint">SPACE</span> / <span class="key-hint">ENTER</span> • Klik Minimap untuk Lompat
+          Gerak: <span class="key-hint">W</span> <span class="key-hint">A</span> <span class="key-hint">S</span> <span class="key-hint">D</span> • Kejar: <span class="key-hint">SPACE</span> • Menu: <span class="key-hint">M</span> • Teleport: <span class="key-hint">Klik Minimap</span>
         </div>
         <div class="canvas-footer-actions">
           <button id="btnFullscreen" class="mini-btn">⛶ Fullscreen</button>
-          <button id="btnMenuToggle" class="mini-btn menu-toggle" style="display: none;">☰ Menu</button>
-          <span>Right-Click: Hapus Tile ke Rumput</span>
+          <span>Right-Click: Hapus Tile</span>
         </div>
       </div>
     </section>
+  </main>
 
-    <!-- Sidebar Controls & Metrics -->
-    <aside class="controls-sidebar">
+  <!-- Sidebar Controls & Metrics (Drawer Outside Main) -->
+  <aside id="sidebarDrawer" class="controls-sidebar">
+
+    <!-- Drawer Header with Close Button -->
+    <div class="sidebar-drawer-header">
+      <div class="sidebar-drawer-title">
+        <span class="logo-badge">Tubes AI</span>
+        <h3>Control Panel & Settings</h3>
+      </div>
+      <button id="btnCloseSidebar" class="btn-close-sidebar" aria-label="Tutup Menu" title="Tutup Menu (Esc)">✕</button>
+    </div>
 
       <!-- Real-Time Metrics HUD -->
       <div class="panel-card">
@@ -77,7 +87,7 @@
       </div>
 
       <!-- Algorithm & Heuristics Config -->
-      <div class="panel-card">=
+      <div class="panel-card">
         <h2>Search Configuration</h2>
 
         <div class="control-group">
@@ -225,7 +235,44 @@
       </div>
 
     </aside>
-  </main>
+
+  <!-- Battle Modal -->
+  <div id="battleModal" class="modal-backdrop">
+    <div class="modal-card battle-card">
+      <div class="modal-header">
+        <h3 id="battleStatusText">⚔️ Turn-Based Battle! ⚔️</h3>
+      </div>
+      <div class="modal-body">
+        <div class="battle-arena">
+          <div class="fighter">
+            <h4>Main Character</h4>
+            <div class="hp-bar-container"><div id="playerHpBar" class="hp-bar player-hp"></div></div>
+            <p>HP: <span id="playerHpText">100</span>/100</p>
+          </div>
+          <div class="vs">VS</div>
+          <div class="fighter">
+            <h4>Enemy NPC</h4>
+            <div class="hp-bar-container"><div id="npcHpBar" class="hp-bar npc-hp"></div></div>
+            <p>HP: <span id="npcHpText">100</span>/100</p>
+          </div>
+        </div>
+
+        <div class="battle-actions">
+          <button id="btnAttack" class="btn btn-primary">⚔️ Attack</button>
+          <button id="btnDefend" class="btn btn-accent">🛡️ Defend</button>
+          <button id="btnPotion" class="btn btn-success">🧪 Potion</button>
+        </div>
+
+        <!-- Debug Overlay for Minimax -->
+        <div class="theory-box debug-overlay">
+          <h4>🤖 AI Debug (Minimax)</h4>
+          <p><strong>Action Evaluations:</strong> <span id="debugEvaluations">Waiting...</span></p>
+          <p><strong>Nodes Expanded this turn:</strong> <span id="debugNodeCount">0</span></p>
+          <p><strong>AI Chose:</strong> <span id="debugAction">...</span></p>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- Comparison Modal -->
   <div id="compareModal" class="modal-backdrop">
