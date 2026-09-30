@@ -5,7 +5,7 @@ export const TILE_SIZE = 32; // Screen display size in pixels (crisp 16x16 scale
 // Battle System Configuration Constants
 export const BATTLE_CONFIG = {
   BASE_DAMAGE: 30,
-  HEAL_AMOUNT: 25,
+  HEAL_AMOUNT: 25, // health potion
   MAX_HP: 100,
 };
 
@@ -67,9 +67,9 @@ export const DIRECTION = {
 
 export const DIR_OFFSETS = {
   [DIRECTION.RIGHT]: { x: 1, y: 0, frameStart: 0 },
-  [DIRECTION.UP]:    { x: 0, y: -1, frameStart: 6 },
-  [DIRECTION.LEFT]:  { x: -1, y: 0, frameStart: 12 },
-  [DIRECTION.DOWN]:  { x: 0, y: 1, frameStart: 18 },
+  [DIRECTION.UP]: { x: 0, y: -1, frameStart: 6 },
+  [DIRECTION.LEFT]: { x: -1, y: 0, frameStart: 12 },
+  [DIRECTION.DOWN]: { x: 0, y: 1, frameStart: 18 },
 };
 
 // Pathfinding Algorithms
