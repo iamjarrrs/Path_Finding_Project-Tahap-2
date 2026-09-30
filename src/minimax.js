@@ -15,11 +15,60 @@ const ACTIONS = {
  * @param {Object} state - { npcHP, playerHP }
  * @returns {number} Score
  */
-function evaluate(state) {
-  if (state.playerHP <= 0) return 100; // NPC wins
-  if (state.npcHP <= 0) return -100;  // Player wins
+
+//netral evaluation
+function evaluate(state) { // Menilai state 
+  if (state.playerHP <= 0) return 1000; // NPC wins
+  if (state.npcHP <= 0) return -1000;  // Player wins
   return state.npcHP - state.playerHP;
 }
+
+/*
+ * Evaluasi Agresif:
+ * NPC berfokus penuh untuk menghabisi HP Player secepat mungkin.
+ */
+
+// function evaluate(state) {
+//   // 1. Terminal State: Kemenangan Mutlak (+1000) atau Kekalahan Mutlak (-1000)
+//   if (state.playerHP <= 0) return 1000;
+//   if (state.npcHP <= 0) return -1000;
+
+//   // 2. Hitung berapa besar HP Player yang sudah hilang (Kerusakan/Damage)
+//   const playerDamageTaken = BATTLE_CONFIG.MAX_HP - state.playerHP;
+
+//   // 3. Formula Bobot Agresif:
+//   // - Kerusakan Player dikali 2 (memberi dorongan tinggi pada aksi ATTACK)
+//   // - HP NPC diberi bobot normal (1x)
+//   const score = (playerDamageTaken * 2) + state.npcHP;
+
+//   return score;
+// }
+
+
+/**
+ * Evaluasi Defensif:
+ * NPC berfokus menjaga HP milik sendiri dan gemar menggunakan perisai (DEFEND).
+ */
+
+// function evaluate(state) {
+//   // 1. Terminal State: Kemenangan Mutlak (+1000) atau Kekalahan Mutlak (-1000)
+//   if (state.playerHP <= 0) return 1000;
+//   if (state.npcHP <= 0) return -1000;
+
+//   // 2. Formula Bobot Defensif Dasar:
+//   // - HP NPC dikali 2 (membuat AI merasa memulihkan HP/POTION sangat berharga)
+//   // - Kurangi dengan HP Player yang tersisa
+//   let score = (state.npcHP * 2) - state.playerHP;
+
+//   // 3. Bonus Poin Pertahanan:
+//   // Jika dalam simulasi ini NPC berada dalam posisi bertahan (Defend),
+//   // berikan bonus skor +20 agar opsi DEFEND terlihat lebih menarik di mata Minimax.
+//   if (state.npcDefending) {
+//     score += 20;
+//   }
+
+//   return score;
+// }
 
 /**
  * Simulates an action to get a new state
@@ -28,8 +77,8 @@ function evaluate(state) {
  * @param {boolean} isNpcTurn - whether it's NPC taking the action
  * @returns {Object} cloned new state
  */
-function simulateAction(state, action, isNpcTurn) {
-  // Clone state (membuat salinan )
+function simulateAction(state, action, isNpcTurn) { // Mensimulasikan action (didalam otak NPC)
+  // Clone state (membuat salinan)
   const nextState = { ...state };
 
   const baseDamage = BATTLE_CONFIG.BASE_DAMAGE;
@@ -40,26 +89,26 @@ function simulateAction(state, action, isNpcTurn) {
     nextState.npcDefending = false; // Reset defend status
     if (action === ACTIONS.ATTACK) {
       let damage = baseDamage;
-      if (nextState.playerDefending) {
+      if (nextState.playerDefending) { // Player defense mengurangi damage sebesar 50%
         damage = Math.floor(damage * 0.5);
       }
       nextState.playerHP -= damage;
-    } else if (action === ACTIONS.DEFEND) {
+    } else if (action === ACTIONS.DEFEND) { // NPC defense mengurangi damage sebesar 50%
       nextState.npcDefending = true;
-    } else if (action === ACTIONS.POTION) {
+    } else if (action === ACTIONS.POTION) { // NPC menggunakan potion memulihkan 25 HP
       nextState.npcHP = Math.min(maxHP, nextState.npcHP + healAmount);
     }
-  } else {
+  } else { // Player's turn
     nextState.playerDefending = false; // Reset defend status
     if (action === ACTIONS.ATTACK) {
       let damage = baseDamage;
-      if (nextState.npcDefending) {
+      if (nextState.npcDefending) { // NPC defense mengurangi damage sebesar 50%
         damage = Math.floor(damage * 0.5);
       }
       nextState.npcHP -= damage;
-    } else if (action === ACTIONS.DEFEND) {
+    } else if (action === ACTIONS.DEFEND) { // Player defense mengurangi damage sebesar 50%
       nextState.playerDefending = true;
-    } else if (action === ACTIONS.POTION) {
+    } else if (action === ACTIONS.POTION) { // Player menggunakan potion memulihkan 25 HP
       nextState.playerHP = Math.min(maxHP, nextState.playerHP + healAmount);
     }
   }
